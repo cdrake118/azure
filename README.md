@@ -92,6 +92,16 @@ Every incident has a **detail page** (click *view* in the log) showing all
 attachments — image previews and audio players — with an *Add evidence* upload,
 per-attachment delete, and an editable form for the TCPA facts.
 
+### Grouping numbers under one entity
+
+Telemarketers rotate and spoof numbers, but the TCPA's repeat-call thresholds
+count calls "by or on behalf of the same entity." On any incident's detail page,
+assign its number to a named **entity** (e.g. "ABC Loan Services"); type the same
+name on another number's page to link them. The §227(c) Do Not Call and
+§64.1200(c)(1) calling-hours thresholds then count calls across all of that
+entity's numbers, so two calls from two different numbers count as two calls from
+one entity.
+
 Uploads are capped at 25 MB. `.m4a` clips play inline; unusual carrier formats
 are still stored and downloadable as evidence.
 

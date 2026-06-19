@@ -91,6 +91,36 @@ def list_callers(db: Session) -> list[models.Caller]:
     return list(db.scalars(select(models.Caller).order_by(models.Caller.phone_number)))
 
 
+def get_or_create_entity(db: Session, name: str) -> models.Entity:
+    name = name.strip()
+    entity = db.scalar(select(models.Entity).where(models.Entity.name == name))
+    if entity is None:
+        entity = models.Entity(name=name)
+        db.add(entity)
+        db.flush()
+    return entity
+
+
+def list_entities(db: Session) -> list[models.Entity]:
+    return list(db.scalars(select(models.Entity).order_by(models.Entity.name)))
+
+
+def set_caller_entity(
+    db: Session, caller_id: int, entity_name: str | None
+) -> models.Caller | None:
+    """Assign a caller to a named entity, or clear it when the name is empty."""
+    caller = db.get(models.Caller, caller_id)
+    if caller is None:
+        return None
+    if entity_name and entity_name.strip():
+        caller.entity_id = get_or_create_entity(db, entity_name).id
+    else:
+        caller.entity_id = None
+    db.commit()
+    db.refresh(caller)
+    return caller
+
+
 def get_caller(db: Session, caller_id: int) -> models.Caller | None:
     return db.get(models.Caller, caller_id)
 

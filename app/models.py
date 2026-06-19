@@ -48,8 +48,27 @@ class Source(str, enum.Enum):
     api = "api"
 
 
+class Entity(Base):
+    """A business/caller behind one or more phone numbers.
+
+    Telemarketers rotate and spoof numbers, but the TCPA's repeat-call
+    thresholds (47 U.S.C. 227(c)(5): "more than one call by or on behalf of the
+    same entity") look at the entity, not the number. Grouping callers under an
+    entity lets those thresholds count across all of its numbers.
+    """
+
+    __tablename__ = "entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    callers: Mapped[list["Caller"]] = relationship(back_populates="entity")
+
+
 class Caller(Base):
-    """A phone number / entity that contacted you.
+    """A phone number that contacted you, optionally tied to an entity.
 
     Grouping incidents under a caller makes it easy to count repeat contacts,
     which is central to Do Not Call (§227(c)) claims that require more than one
@@ -63,8 +82,12 @@ class Caller(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("entities.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    entity: Mapped["Entity | None"] = relationship(back_populates="callers")
     incidents: Mapped[list["Incident"]] = relationship(
         back_populates="caller",
         cascade="all, delete-orphan",

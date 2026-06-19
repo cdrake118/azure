@@ -132,6 +132,17 @@ def api_list_callers(db: Session = Depends(get_db)):
     return crud.list_callers(db)
 
 
+@app.post("/api/callers/{caller_id}/entity", response_model=schemas.CallerOut)
+def api_set_caller_entity(
+    caller_id: int, payload: schemas.EntityAssign, db: Session = Depends(get_db)
+):
+    """Group this caller's number under a named entity (or clear it)."""
+    caller = crud.set_caller_entity(db, caller_id, payload.name)
+    if caller is None:
+        raise HTTPException(status_code=404, detail="Caller not found")
+    return caller
+
+
 @app.post("/api/ingest/email", response_model=schemas.IncidentOut)
 def api_ingest_email(payload: schemas.EmailIngest, db: Session = Depends(get_db)):
     """Parse a forwarded SMS/voicemail email and store it as an incident."""
@@ -507,6 +518,7 @@ def web_incident_detail(
             "base": base,
             "treble": treble,
             "contact_types": [t.value for t in ContactType],
+            "entities": crud.list_entities(db),
             "disclaimer": DISCLAIMER,
         },
     )
@@ -564,6 +576,17 @@ async def web_incident_attach(
         crud.create_attachment(
             db, incident_id, data, filename=file.filename, content_type=file.content_type
         )
+    return RedirectResponse(url=f"/incident/{incident_id}", status_code=303)
+
+
+@app.post("/caller/{caller_id}/entity")
+def web_set_caller_entity(
+    caller_id: int,
+    entity_name: str = Form(""),
+    incident_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    crud.set_caller_entity(db, caller_id, entity_name)
     return RedirectResponse(url=f"/incident/{incident_id}", status_code=303)
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
@@ -58,8 +58,25 @@ def get_db():
 
 
 def init_db() -> None:
-    """Create tables if they do not yet exist."""
+    """Create tables if they do not yet exist, and run light migrations."""
     # Import models so they are registered on the metadata before create_all.
     from . import models  # noqa: F401
 
+    # create_all adds new tables (e.g. entities) but never alters existing ones.
     Base.metadata.create_all(bind=engine)
+    _run_lightweight_migrations()
+
+
+def _run_lightweight_migrations() -> None:
+    """Add columns introduced after a database was first created.
+
+    create_all() won't add a new column to an existing table, so for additive
+    schema changes we ALTER in place. Each step is guarded to be idempotent and
+    safe on both SQLite and Postgres.
+    """
+    inspector = inspect(engine)
+    if "callers" in inspector.get_table_names():
+        caller_columns = {c["name"] for c in inspector.get_columns("callers")}
+        if "entity_id" not in caller_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE callers ADD COLUMN entity_id INTEGER"))

@@ -158,24 +158,42 @@ def _outside_calling_hours(received_at) -> bool:
     return minutes < 8 * 60 or minutes > 21 * 60
 
 
-def _dnc_counts_for_caller(incidents: list[Incident]) -> dict[int, int]:
-    """For each incident id, count same-caller contacts in the trailing 12 months.
+def _entity_group_key(incident: Incident) -> str:
+    """Group incidents by entity when the caller has one, else by caller.
 
-    Used to evaluate the §227(c) "more than one call in 12 months" requirement.
+    Reading ``incident.caller.entity_id`` lazily resolves the relationship for
+    session-bound incidents; for transient objects (e.g. in unit tests) the
+    relationship is None and we fall back to the caller id.
     """
-    by_caller: dict[int, list[Incident]] = defaultdict(list)
+    caller = getattr(incident, "caller", None)
+    entity_id = getattr(caller, "entity_id", None) if caller is not None else None
+    if entity_id:
+        return f"entity:{entity_id}"
+    return f"caller:{incident.caller_id}"
+
+
+def _dnc_counts_for_caller(incidents: list[Incident]) -> dict[int, int]:
+    """For each incident id, count same-entity contacts in the trailing 12 months.
+
+    Used to evaluate the §227(c) "more than one call in 12 months by or on
+    behalf of the same entity" requirement. Numbers grouped under one entity are
+    counted together.
+    """
+    by_group: dict[str, list[Incident]] = defaultdict(list)
     for inc in incidents:
-        by_caller[inc.caller_id].append(inc)
+        by_group[_entity_group_key(inc)].append(inc)
 
     counts: dict[int, int] = {}
     window = timedelta(days=365)
-    for group in by_caller.values():
-        group_sorted = sorted(group, key=lambda i: i.received_at)
-        for inc in group_sorted:
+    for group in by_group.values():
+        for inc in group:
+            # Count same-entity contacts within 12 months on either side, so
+            # every call that is part of a "more than one call" pattern is
+            # flagged, not just the later one.
             n = sum(
                 1
-                for other in group_sorted
-                if timedelta(0) <= (inc.received_at - other.received_at) <= window
+                for other in group
+                if abs(inc.received_at - other.received_at) <= window
             )
             counts[inc.id] = n
     return counts

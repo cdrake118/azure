@@ -66,7 +66,14 @@ class CallerOut(BaseModel):
     name: str | None = None
     company: str | None = None
     notes: str | None = None
+    entity_id: int | None = None
     created_at: datetime
+
+
+class EntityAssign(BaseModel):
+    name: str | None = Field(
+        None, description="Entity name to assign; empty/null clears the entity."
+    )
 
 
 class CallerWithIncidents(CallerOut):

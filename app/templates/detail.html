@@ -28,6 +28,27 @@
   </div>
 </div>
 
+<h2>Entity</h2>
+<p class="help">
+  Group numbers from the same business under one entity so the "more than one
+  call by the same entity" thresholds (DNC and calling-hours rules) count them
+  together — useful when a telemarketer rotates or spoofs numbers.
+</p>
+<form method="post" action="/caller/{{ incident.caller_id }}/entity" class="entry">
+  <input type="hidden" name="incident_id" value="{{ incident.id }}" />
+  <div class="field">
+    <label>Business / entity for {{ incident.from_number }}</label>
+    <input name="entity_name" list="entity-list"
+           value="{{ incident.caller.entity.name if incident.caller and incident.caller.entity else '' }}"
+           placeholder="e.g. 'ABC Loan Services' (leave blank to ungroup)" />
+    <datalist id="entity-list">
+      {% for e in entities %}<option value="{{ e.name }}"></option>{% endfor %}
+    </datalist>
+    <small>Type the same name on another number's page to link them.</small>
+  </div>
+  <div class="actions"><button type="submit">Save entity</button></div>
+</form>
+
 <h2>Evidence ({{ incident.attachments|length }})</h2>
 <div class="attachments">
   {% for a in incident.attachments %}
