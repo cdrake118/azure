@@ -1,7 +1,8 @@
 """Database engine and session management.
 
-Uses SQLite by default so the tool runs locally with zero setup. Point
-``ROBOCALL_DB_URL`` at any SQLAlchemy-compatible URL to use another backend.
+Uses SQLite by default so the tool runs locally with zero setup. For a durable
+deployment (e.g. Railway), set a Postgres URL via ``ROBOCALL_DB_URL`` or the
+standard ``DATABASE_URL`` that Railway's Postgres plugin provides.
 """
 
 from __future__ import annotations
@@ -11,12 +12,35 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DB_URL = os.environ.get("ROBOCALL_DB_URL", "sqlite:///./robocall_log.db")
+
+def _resolve_db_url() -> str:
+    """Pick the database URL and normalize provider-specific quirks.
+
+    Precedence: ROBOCALL_DB_URL, then DATABASE_URL (Railway/Heroku style),
+    then a local SQLite file. The legacy ``postgres://`` scheme that some
+    providers still hand out is rewritten to ``postgresql://`` because
+    SQLAlchemy 2.x no longer accepts the old form.
+    """
+    url = (
+        os.environ.get("ROBOCALL_DB_URL")
+        or os.environ.get("DATABASE_URL")
+        or "sqlite:///./robocall_log.db"
+    )
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    return url
+
+
+DB_URL = _resolve_db_url()
 
 # check_same_thread is only needed for SQLite + a multithreaded web server.
 _connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
 
-engine = create_engine(DB_URL, connect_args=_connect_args, future=True)
+# pool_pre_ping avoids stale-connection errors on managed Postgres that closes
+# idle connections; it is harmless for SQLite.
+engine = create_engine(
+    DB_URL, connect_args=_connect_args, pool_pre_ping=True, future=True
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

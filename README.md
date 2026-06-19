@@ -94,8 +94,35 @@ curl -X POST http://127.0.0.1:8000/api/incidents \
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `ROBOCALL_DB_URL` | `sqlite:///./robocall_log.db` | SQLAlchemy database URL |
+| `ROBOCALL_DB_URL` | `sqlite:///./robocall_log.db` | SQLAlchemy database URL. Falls back to `DATABASE_URL` if unset. A legacy `postgres://` scheme is auto-rewritten to `postgresql://`. |
+| `ROBOCALL_USERNAME` | `admin` | Username for HTTP Basic auth |
+| `ROBOCALL_PASSWORD` | _(unset)_ | If set, the whole app requires this password. **If unset, the app runs with no authentication.** |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Bind address for `run.sh` |
+
+See `.env.example` for a copy-paste starting point.
+
+## Deploying to Railway
+
+The repo includes a `Procfile` and `railway.json`, so Railway builds and starts
+it automatically (uvicorn bound to `0.0.0.0:$PORT`). A `/healthz` endpoint is
+used as the health check and stays reachable without a login.
+
+For a deployment you can actually rely on, do two things:
+
+1. **Use Postgres, not SQLite.** Railway's container disk is wiped on every
+   deploy/restart, so a SQLite file would lose your log. Add the **Postgres**
+   plugin, then on the app service set a variable referencing it:
+
+   ```
+   ROBOCALL_DB_URL=${{Postgres.DATABASE_URL}}
+   ```
+
+   The `psycopg2-binary` driver is already in `requirements.txt`; tables are
+   created automatically on first boot.
+
+2. **Set a password.** Add `ROBOCALL_PASSWORD` (and optionally
+   `ROBOCALL_USERNAME`) as service variables. Without `ROBOCALL_PASSWORD`, the
+   public URL is open to anyone.
 
 ## Evidence tips
 
@@ -124,7 +151,11 @@ app/
   ingest.py      Forwarded SMS/voicemail email parser
   tcpa.py        TCPA violation analysis + damages
   report.py      CSV export + claim summary
+  auth.py        Optional HTTP Basic auth
   templates/     Jinja2 web UI
   static/        CSS
 tests/           pytest suite
+Procfile         Railway/Heroku start command
+railway.json     Railway build + deploy config
+.env.example     Sample environment configuration
 ```

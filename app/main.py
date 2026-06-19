@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from . import crud, ingest, report, schemas
+from .auth import require_auth, warn_if_unprotected
 from .database import get_db, init_db
 from .models import ContactType, Source
 from .tcpa import DISCLAIMER, analyze_all, damages_for_findings
@@ -22,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    warn_if_unprotected()
     init_db()
     yield
 
@@ -34,10 +36,18 @@ app = FastAPI(
         "needed to evaluate TCPA claims. Informational only, not legal advice."
     ),
     lifespan=lifespan,
+    # Enforce HTTP Basic auth on every route when ROBOCALL_PASSWORD is set.
+    dependencies=[Depends(require_auth)],
 )
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    """Unauthenticated liveness probe for the hosting platform."""
+    return {"status": "ok"}
 
 
 # --------------------------------------------------------------------------- #
