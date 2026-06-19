@@ -31,6 +31,7 @@
       <th>Type</th>
       <th>From</th>
       <th>Message / transcript</th>
+      <th>Audio / evidence</th>
       <th>Potential statutes</th>
       <th>Est. $</th>
       <th></th>
@@ -46,6 +47,17 @@
         {% if row.incident.caller_id_name %}<br><small>{{ row.incident.caller_id_name }}</small>{% endif %}
       </td>
       <td class="msg">{{ (row.incident.message_body or "")[:160] }}{% if (row.incident.message_body or "")|length > 160 %}…{% endif %}</td>
+      <td>
+        {% for a in row.incident.attachments %}
+          {% if a.content_type.startswith("audio") %}
+            <audio controls preload="none" src="/api/attachments/{{ a.id }}"></audio>
+          {% else %}
+            <a href="/api/attachments/{{ a.id }}?download=true">{{ a.filename or "file" }}</a>
+          {% endif %}
+        {% else %}
+          <span class="muted">—</span>
+        {% endfor %}
+      </td>
       <td>
         {% for f in row.findings %}
           <span class="badge" title="{{ f.description }}">{{ f.statute }}</span>

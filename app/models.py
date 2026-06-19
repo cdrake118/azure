@@ -17,6 +17,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
 )
@@ -110,3 +111,32 @@ class Incident(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     caller: Mapped["Caller"] = relationship(back_populates="incidents")
+    attachments: Mapped[list["Attachment"]] = relationship(
+        back_populates="incident",
+        cascade="all, delete-orphan",
+        order_by="Attachment.created_at",
+    )
+
+
+class Attachment(Base):
+    """Binary evidence (e.g. a voicemail audio file) attached to an incident.
+
+    The bytes are stored directly in the database so a single Postgres instance
+    holds everything — no separate object store or ephemeral disk to lose. This
+    is fine for personal volume; voicemail clips are typically well under a few
+    megabytes.
+    """
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[int] = mapped_column(ForeignKey("incidents.id"), index=True)
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    content_type: Mapped[str] = mapped_column(
+        String(128), default="application/octet-stream"
+    )
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    incident: Mapped["Incident"] = relationship(back_populates="attachments")

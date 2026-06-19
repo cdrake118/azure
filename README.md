@@ -69,6 +69,21 @@ curl -X POST http://127.0.0.1:8000/api/incidents \
        "on_dnc_registry":true}'
 ```
 
+## Logging voicemail audio
+
+Audio files (and image evidence) are stored in the database and play back inline
+in the dashboard. Two ways to add them:
+
+- **Web upload** — on the **+ Add entry** form, attach a file in the *Voicemail
+  audio / evidence* field. On iPhone: open the voicemail → **Share → Save to
+  Files**, then pick it in the form.
+- **One-tap from iPhone** — set up the Apple Shortcut so you can upload a
+  voicemail straight from the **Share** menu. See
+  [`docs/ios-shortcut.md`](docs/ios-shortcut.md).
+
+Uploads are capped at 25 MB. `.m4a` clips play inline; unusual carrier formats
+are still stored and downloadable as evidence.
+
 ## Reports & export
 
 - `GET /api/report` — aggregated potential violations and damages, grouped by caller
@@ -87,6 +102,9 @@ curl -X POST http://127.0.0.1:8000/api/incidents \
 | DELETE | `/api/incidents/{id}` | Delete an incident |
 | GET | `/api/callers` | List distinct callers |
 | POST | `/api/ingest/email` | Parse a forwarded SMS/voicemail email |
+| POST | `/api/voicemails` | Upload a voicemail audio file (+ number) as a new incident |
+| POST | `/api/incidents/{id}/attachments` | Attach evidence to an existing incident |
+| GET | `/api/attachments/{id}` | Stream/download an attachment |
 | GET | `/api/report` | Aggregated claim report |
 | GET | `/export/incidents.csv` | CSV export |
 
@@ -97,6 +115,7 @@ curl -X POST http://127.0.0.1:8000/api/incidents \
 | `ROBOCALL_DB_URL` | `sqlite:///./robocall_log.db` | SQLAlchemy database URL. Falls back to `DATABASE_URL` if unset. A legacy `postgres://` scheme is auto-rewritten to `postgresql://`. |
 | `ROBOCALL_USERNAME` | `admin` | Username for HTTP Basic auth |
 | `ROBOCALL_PASSWORD` | _(unset)_ | If set, the whole app requires this password. **If unset, the app runs with no authentication.** |
+| `ROBOCALL_UPLOAD_TOKEN` | _(unset)_ | If set, `/api/voicemails` also accepts this token via `?token=…` (used by the iOS Shortcut). |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Bind address for `run.sh` |
 
 See `.env.example` for a copy-paste starting point.
@@ -151,10 +170,11 @@ app/
   ingest.py      Forwarded SMS/voicemail email parser
   tcpa.py        TCPA violation analysis + damages
   report.py      CSV export + claim summary
-  auth.py        Optional HTTP Basic auth
+  auth.py        Optional HTTP Basic auth + upload-token auth
   templates/     Jinja2 web UI
   static/        CSS
 tests/           pytest suite
+docs/            iOS Shortcut setup guide
 Procfile         Railway/Heroku start command
 railway.json     Railway build + deploy config
 .env.example     Sample environment configuration

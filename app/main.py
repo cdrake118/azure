@@ -6,17 +6,42 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from . import crud, ingest, report, schemas
-from .auth import require_auth, warn_if_unprotected
+from .auth import require_auth, require_upload_auth, warn_if_unprotected
 from .database import get_db, init_db
 from .models import ContactType, Source
 from .tcpa import DISCLAIMER, analyze_all, damages_for_findings
+
+# Cap uploads so a runaway file can't exhaust memory/storage. Voicemail clips
+# are typically well under this.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
+        )
+    return data
+
+
+def _parse_form_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -137,6 +162,82 @@ def api_ingest_email(payload: schemas.EmailIngest, db: Session = Depends(get_db)
     return crud.create_incident(db, create)
 
 
+# --------------------------------------------------------------------------- #
+# Attachments (voicemail audio and other evidence)
+# --------------------------------------------------------------------------- #
+
+
+@app.post(
+    "/api/voicemails",
+    response_model=schemas.IncidentOut,
+    dependencies=[Depends(require_upload_auth)],
+)
+async def api_upload_voicemail(
+    file: UploadFile = File(...),
+    from_number: str = Form(...),
+    received_at: str | None = Form(None),
+    message_body: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Create a voicemail incident from an uploaded audio file in one call.
+
+    This is the endpoint the iOS Shortcut posts to: it accepts the audio file
+    plus the caller's number and creates a logged voicemail with the audio
+    attached. Authenticated by upload token or Basic auth.
+    """
+    data = await _read_upload(file)
+    incident = crud.create_incident(
+        db,
+        schemas.IncidentCreate(
+            received_at=_parse_form_dt(received_at) or datetime.now(timezone.utc),
+            contact_type=ContactType.voicemail,
+            from_number=from_number.strip(),
+            message_body=message_body or None,
+            source=Source.api,
+        ),
+    )
+    crud.create_attachment(
+        db, incident.id, data, filename=file.filename, content_type=file.content_type
+    )
+    db.refresh(incident)
+    return incident
+
+
+@app.post(
+    "/api/incidents/{incident_id}/attachments",
+    response_model=schemas.AttachmentOut,
+)
+async def api_add_attachment(
+    incident_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Attach evidence (e.g. audio) to an already-logged incident."""
+    if crud.get_incident(db, incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    data = await _read_upload(file)
+    return crud.create_attachment(
+        db, incident_id, data, filename=file.filename, content_type=file.content_type
+    )
+
+
+@app.get("/api/attachments/{attachment_id}")
+def api_get_attachment(
+    attachment_id: int, download: bool = False, db: Session = Depends(get_db)
+):
+    """Stream an attachment so the dashboard's audio player can play it."""
+    attachment = crud.get_attachment(db, attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    disposition = "attachment" if download else "inline"
+    filename = attachment.filename or f"attachment-{attachment.id}"
+    return Response(
+        content=attachment.data,
+        media_type=attachment.content_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+    )
+
+
 @app.get("/api/report")
 def api_report(db: Session = Depends(get_db)):
     return report.build_claim_report(crud.all_incidents(db))
@@ -191,7 +292,7 @@ def web_new(request: Request):
 
 
 @app.post("/new")
-def web_create(
+async def web_create(
     from_number: str = Form(...),
     contact_type: str = Form("text_sms"),
     received_at: str = Form(""),
@@ -205,17 +306,11 @@ def web_create(
     prior_consent: str = Form(""),
     opted_out: str = Form(""),
     notes: str = Form(""),
+    audio: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
-    parsed_dt = None
-    if received_at:
-        try:
-            parsed_dt = datetime.fromisoformat(received_at)
-        except ValueError:
-            parsed_dt = None
-
     payload = schemas.IncidentCreate(
-        received_at=parsed_dt,
+        received_at=_parse_form_dt(received_at),
         contact_type=ContactType(contact_type),
         from_number=from_number.strip(),
         message_body=message_body or None,
@@ -230,7 +325,13 @@ def web_create(
         notes=notes or None,
         source=Source.manual,
     )
-    crud.create_incident(db, payload)
+    incident = crud.create_incident(db, payload)
+    # An optional audio/evidence file submitted with the form.
+    if audio is not None and audio.filename:
+        data = await _read_upload(audio)
+        crud.create_attachment(
+            db, incident.id, data, filename=audio.filename, content_type=audio.content_type
+        )
     return RedirectResponse(url="/", status_code=303)
 
 

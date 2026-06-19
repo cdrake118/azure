@@ -35,6 +35,17 @@ class IncidentCreate(IncidentBase):
     source: Source = Source.api
 
 
+class AttachmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    incident_id: int
+    filename: str | None = None
+    content_type: str
+    size_bytes: int
+    created_at: datetime
+
+
 class IncidentOut(IncidentBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,6 +55,7 @@ class IncidentOut(IncidentBase):
     raw_message: str | None = None
     evidence_path: str | None = None
     created_at: datetime
+    attachments: list[AttachmentOut] = []
 
 
 class CallerOut(BaseModel):

@@ -3,7 +3,7 @@
 {% block content %}
 
 <h2>Add a contact</h2>
-<form method="post" action="/new" class="entry">
+<form method="post" action="/new" class="entry" enctype="multipart/form-data">
   <div class="field">
     <label>Sender number <span class="req">*</span></label>
     <input name="from_number" required placeholder="+15551234567" />
@@ -32,6 +32,12 @@
   <div class="field full">
     <label>Message body / voicemail transcript</label>
     <textarea name="message_body" rows="4" placeholder="Paste the text or transcribe the voicemail…"></textarea>
+  </div>
+
+  <div class="field full">
+    <label>Voicemail audio / evidence file (optional)</label>
+    <input type="file" name="audio" accept="audio/*,image/*" />
+    <small>On iPhone: open the voicemail → Share → Save to Files, then pick it here. Max 25&nbsp;MB.</small>
   </div>
 
   <fieldset>

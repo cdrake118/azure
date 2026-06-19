@@ -97,3 +97,27 @@ def get_caller(db: Session, caller_id: int) -> models.Caller | None:
 
 def all_incidents(db: Session) -> list[models.Incident]:
     return list(db.scalars(select(models.Incident)))
+
+
+def create_attachment(
+    db: Session,
+    incident_id: int,
+    data: bytes,
+    filename: str | None = None,
+    content_type: str | None = None,
+) -> models.Attachment:
+    attachment = models.Attachment(
+        incident_id=incident_id,
+        filename=filename,
+        content_type=content_type or "application/octet-stream",
+        size_bytes=len(data),
+        data=data,
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+def get_attachment(db: Session, attachment_id: int) -> models.Attachment | None:
+    return db.get(models.Attachment, attachment_id)
