@@ -1,0 +1,130 @@
+# Robocall TCPA Logger
+
+A small, self-hosted web app + JSON API for logging the unwanted robocall
+**texts** and **voicemails** you receive, and organizing the facts you'd need to
+evaluate and pursue claims under the **Telephone Consumer Protection Act
+(TCPA)**.
+
+It runs locally with SQLite — no cloud account, your data stays on your machine.
+
+> ⚖️ **Not legal advice.** This tool organizes facts and produces *informational*
+> estimates only. Statutory eligibility, consent, and damages depend on the
+> specific facts and current case law. Talk to a licensed attorney before
+> filing anything.
+
+## What it captures
+
+For each contact it records the facts that matter for a TCPA claim:
+
+- Who contacted you (number, caller-ID name, company if known)
+- When, and how (text, voicemail, prerecorded call, live call, missed call)
+- The message body / voicemail transcript (your evidence)
+- Whether it was **prerecorded / artificial voice** or appears **autodialed (ATDS)**
+- Whether your number was on the **National Do Not Call registry**
+- Whether you ever **consented** or told them to **stop**
+
+From those facts it flags which incidents look actionable under the common TCPA
+theories and gives a rough statutory-damages range.
+
+### TCPA theories modeled
+
+| Statute | Theory | Damages |
+| --- | --- | --- |
+| 47 U.S.C. § 227(b) | Autodialed/prerecorded contact to a cell without prior consent | $500, up to $1,500 if willful |
+| 47 U.S.C. § 227(c) / 47 CFR 64.1200(c) | >1 telemarketing contact in 12 months to a DNC-registered number | $500, up to $1,500 if willful |
+| 47 CFR 64.1200(d) | Continued contact after you asked them to stop | $500, up to $1,500 if willful |
+
+The damages figures are the statutory amounts set by the TCPA itself.
+
+## Quick start
+
+```bash
+pip install -r requirements.txt
+./run.sh              # or: uvicorn app.main:app --reload
+```
+
+Open <http://127.0.0.1:8000>. Interactive API docs are at `/docs`.
+
+## Logging a contact
+
+**From the web UI** — click **+ Add entry** and fill in the form, or
+**Paste forwarded message** to paste a forwarded SMS / voicemail-to-email
+notification and let the parser pull out the number, time, and text.
+
+**Forward by email / automation** — POST the raw notification to the API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/ingest/email \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":"New voicemail","body":"From: +1 (555) 123-4567\nReceived: 06/15/2026 09:30 AM\nTranscript: This is about your car warranty..."}'
+```
+
+**Manual API entry**
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/incidents \
+  -H 'Content-Type: application/json' \
+  -d '{"from_number":"+15551234567","contact_type":"text_sms",
+       "message_body":"You are pre-approved!","is_autodialed":true,
+       "on_dnc_registry":true}'
+```
+
+## Reports & export
+
+- `GET /api/report` — aggregated potential violations and damages, grouped by caller
+- `GET /export/incidents.csv` — full CSV export (one row per contact, with the
+  potential statutes and damages) — handy to hand to an attorney
+- `GET /api/incidents/{id}/analysis` — the findings for a single incident
+
+## API reference
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/incidents` | Create an incident |
+| GET | `/api/incidents` | List incidents (filter by `caller_id`, `contact_type`) |
+| GET | `/api/incidents/{id}` | Get one incident |
+| GET | `/api/incidents/{id}/analysis` | TCPA findings for one incident |
+| DELETE | `/api/incidents/{id}` | Delete an incident |
+| GET | `/api/callers` | List distinct callers |
+| POST | `/api/ingest/email` | Parse a forwarded SMS/voicemail email |
+| GET | `/api/report` | Aggregated claim report |
+| GET | `/export/incidents.csv` | CSV export |
+
+## Configuration
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `ROBOCALL_DB_URL` | `sqlite:///./robocall_log.db` | SQLAlchemy database URL |
+| `HOST` / `PORT` | `127.0.0.1` / `8000` | Bind address for `run.sh` |
+
+## Evidence tips
+
+- Keep the **original** text/voicemail — don't delete it. The log stores a copy
+  but the original on your device/carrier is the stronger evidence.
+- Record dates/times precisely; for DNC claims the **12-month window** and the
+  **"more than one call"** requirement depend on accurate timestamps.
+- Note when you said "STOP" / asked to be removed — that powers the
+  64.1200(d) opt-out theory.
+- Register your number at <https://www.donotcall.gov> and record the date.
+
+## Running the tests
+
+```bash
+pytest
+```
+
+## Project layout
+
+```
+app/
+  main.py        FastAPI app: JSON API + web UI routes
+  models.py      SQLAlchemy ORM (Caller, Incident)
+  schemas.py     Pydantic request/response models
+  crud.py        Database operations
+  ingest.py      Forwarded SMS/voicemail email parser
+  tcpa.py        TCPA violation analysis + damages
+  report.py      CSV export + claim summary
+  templates/     Jinja2 web UI
+  static/        CSS
+tests/           pytest suite
+```

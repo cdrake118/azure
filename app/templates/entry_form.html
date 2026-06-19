@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Add entry · Robocall TCPA Logger{% endblock %}
+{% block content %}
+
+<h2>Add a contact</h2>
+<form method="post" action="/new" class="entry">
+  <div class="field">
+    <label>Sender number <span class="req">*</span></label>
+    <input name="from_number" required placeholder="+15551234567" />
+  </div>
+
+  <div class="field">
+    <label>Type</label>
+    <select name="contact_type">
+      {% for t in contact_types %}
+      <option value="{{ t }}">{{ t.replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Received at</label>
+    <input type="datetime-local" name="received_at" />
+    <small>Leave blank to use now.</small>
+  </div>
+
+  <div class="field">
+    <label>Caller ID name / company (if known)</label>
+    <input name="caller_id_name" placeholder="e.g. 'Auto Warranty Services'" />
+  </div>
+
+  <div class="field full">
+    <label>Message body / voicemail transcript</label>
+    <textarea name="message_body" rows="4" placeholder="Paste the text or transcribe the voicemail…"></textarea>
+  </div>
+
+  <fieldset>
+    <legend>TCPA facts</legend>
+    <label class="chk"><input type="checkbox" name="is_prerecorded" /> Prerecorded / artificial voice</label>
+    <label class="chk"><input type="checkbox" name="is_autodialed" /> Appears autodialed (ATDS)</label>
+    <label class="chk"><input type="checkbox" name="to_number_is_cell" checked /> My number is a cell phone</label>
+    <label class="chk"><input type="checkbox" name="on_dnc_registry" /> My number is on the National Do Not Call registry</label>
+    <label class="chk"><input type="checkbox" name="opted_out" /> I previously told them to stop</label>
+    <label class="chk"><input type="checkbox" name="prior_consent" /> I gave prior consent to contact me</label>
+  </fieldset>
+
+  <div class="field full">
+    <label>Notes</label>
+    <textarea name="notes" rows="2" placeholder="Anything else useful as evidence…"></textarea>
+  </div>
+
+  <div class="actions">
+    <button type="submit">Save entry</button>
+    <a href="/" class="cancel">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

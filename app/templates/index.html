@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section class="summary">
+  <div class="cards">
+    <div class="card">
+      <div class="num">{{ summary.total_incidents }}</div>
+      <div class="label">Logged contacts</div>
+    </div>
+    <div class="card">
+      <div class="num">{{ summary.total_callers }}</div>
+      <div class="label">Distinct numbers</div>
+    </div>
+    <div class="card">
+      <div class="num">${{ "{:,}".format(summary.estimated_base_damages) }}</div>
+      <div class="label">Est. base damages ($500/violation)</div>
+    </div>
+    <div class="card">
+      <div class="num">${{ "{:,}".format(summary.estimated_treble_damages) }}</div>
+      <div class="label">If willful ($1,500/violation)</div>
+    </div>
+  </div>
+</section>
+
+<h2>Logged contacts</h2>
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Received</th>
+      <th>Type</th>
+      <th>From</th>
+      <th>Message / transcript</th>
+      <th>Potential statutes</th>
+      <th>Est. $</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr class="{{ 'actionable' if row.findings else '' }}">
+      <td class="nowrap">{{ row.incident.received_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ row.incident.contact_type.value.replace("_", " ") }}</td>
+      <td class="nowrap">
+        {{ row.incident.from_number }}
+        {% if row.incident.caller_id_name %}<br><small>{{ row.incident.caller_id_name }}</small>{% endif %}
+      </td>
+      <td class="msg">{{ (row.incident.message_body or "")[:160] }}{% if (row.incident.message_body or "")|length > 160 %}…{% endif %}</td>
+      <td>
+        {% for f in row.findings %}
+          <span class="badge" title="{{ f.description }}">{{ f.statute }}</span>
+        {% else %}
+          <span class="muted">—</span>
+        {% endfor %}
+      </td>
+      <td class="nowrap">{% if row.base %}${{ "{:,}".format(row.base) }}–${{ "{:,}".format(row.treble) }}{% else %}—{% endif %}</td>
+      <td>
+        <form method="post" action="/delete/{{ row.incident.id }}" onsubmit="return confirm('Delete this entry?');">
+          <button class="link-danger" type="submit">delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No contacts logged yet. <a href="/new">Add your first entry</a> or
+  <a href="/ingest">paste a forwarded text/voicemail</a>.</p>
+{% endif %}
+
+{% if summary.per_caller %}
+<h2>By caller</h2>
+<table>
+  <thead>
+    <tr><th>Number</th><th>Contacts</th><th>Actionable</th><th>Statutes</th><th>Est. base</th><th>Est. willful</th></tr>
+  </thead>
+  <tbody>
+    {% for c in summary.per_caller %}
+    <tr>
+      <td class="nowrap">{{ c.phone_number }}</td>
+      <td>{{ c.total_incidents }}</td>
+      <td>{{ c.actionable_incidents }}</td>
+      <td>{% for s in c.statutes %}<span class="badge">{{ s }}</span>{% else %}—{% endfor %}</td>
+      <td>${{ "{:,}".format(c.base_damages) }}</td>
+      <td>${{ "{:,}".format(c.treble_damages) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

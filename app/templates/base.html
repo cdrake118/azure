@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Robocall TCPA Logger{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1><a href="/">📵 Robocall TCPA Logger</a></h1>
+    <nav>
+      <a href="/">Log</a>
+      <a href="/new">+ Add entry</a>
+      <a href="/ingest">Paste forwarded message</a>
+      <a href="/export/incidents.csv">Export CSV</a>
+      <a href="/docs">API</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <p class="disclaimer">{{ disclaimer }}</p>
+  </footer>
+</body>
+</html>

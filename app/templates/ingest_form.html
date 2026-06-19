@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Paste forwarded message · Robocall TCPA Logger{% endblock %}
+{% block content %}
+
+<h2>Paste a forwarded text or voicemail notification</h2>
+<p class="help">
+  Paste the body of a forwarded SMS or a voicemail-to-email notification.
+  The parser will try to pull out the sender number, timestamp, and message
+  text. Anything it can't read, you can fix afterward by editing the entry.
+</p>
+
+<form method="post" action="/ingest" class="entry">
+  <div class="field">
+    <label>Subject (optional)</label>
+    <input name="subject" placeholder="e.g. 'New voicemail from (555) 123-4567'" />
+  </div>
+  <div class="field full">
+    <label>Message body <span class="req">*</span></label>
+    <textarea name="body" rows="10" required placeholder="Paste the full forwarded message here…"></textarea>
+  </div>
+  <div class="actions">
+    <button type="submit">Parse &amp; save</button>
+    <a href="/" class="cancel">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
