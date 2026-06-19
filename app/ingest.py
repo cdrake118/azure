@@ -185,6 +185,7 @@ _SCREENSHOT_DATE_RE = re.compile(
 _SOLICITATION_WORDS = (
     "warranty",
     "loan",
+    "loan specialist",
     "approval",
     "approved",
     "offer",
@@ -196,6 +197,27 @@ _SOLICITATION_WORDS = (
     "final notice",
     "lower your",
     "limited time",
+    "monthly payment",
+    "paperwork",
+    "tax",
+    "tax resolution",
+    "resolution department",
+    "obligation",
+    "penalties",
+    "balance owed",
+    "reduce",
+)
+
+# Automated phone-tree prompts, e.g. "press 2", "please press two".
+_PRESS_MENU_RE = re.compile(
+    r"press\s+(?:\d|one|two|three|four|five|six|seven|eight|nine|zero)",
+    re.IGNORECASE,
+)
+
+# Opt-out / do-not-call language, including "removed from our list" phrasing.
+_OPT_OUT_RE = re.compile(
+    r"opt[\s-]*out|do not call|stop calling|remove[d]?\b[\w\s']{0,20}\blist",
+    re.IGNORECASE,
 )
 
 
@@ -223,6 +245,20 @@ def _screenshot_datetime(text: str) -> datetime | None:
     return None
 
 
+def _callback_numbers(text: str, caller_number: str | None) -> list[str]:
+    """Phone numbers mentioned in the text that differ from the caller's number.
+
+    A callback number that doesn't match the caller ID is useful evidence — it
+    can identify the actual business behind a spoofed or rotating caller ID.
+    """
+    found: list[str] = []
+    for m in PHONE_RE.finditer(text):
+        num = _normalize_number(m)
+        if num != caller_number and num not in found:
+            found.append(num)
+    return found
+
+
 def _screenshot_caller_name(text: str) -> str | None:
     # The subtitle line reads like "Unknown - Jun 19, 2026 at 3:38 AM" or
     # "John's Auto - Jun 19, 2026 ...". Take the part before the dash.
@@ -240,7 +276,13 @@ def _screenshot_caller_name(text: str) -> str | None:
 
 
 def _screenshot_transcript(text: str) -> str | None:
-    m = re.search(r"\bTranscript\b\s*[:\n]?\s*(.+)", text, re.IGNORECASE | re.DOTALL)
+    # Skip an optional parenthetical after the label, e.g. "Transcript (low
+    # confidence)", so it doesn't get pulled into the transcript body.
+    m = re.search(
+        r"\bTranscript\b(?:\s*\([^)]*\))?\s*[:\n]?\s*(.+)",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
     if not m:
         return None
     lines: list[str] = []
@@ -282,15 +324,24 @@ def parse_voicemail_screenshot(ocr_text: str) -> ParsedScreenshot:
     if PRERECORDED_HINTS.search(ocr_text):
         is_prerecorded = True
         signals.append("prerecorded/automated keywords")
-    if re.search(r"press\s+\d", lower):
+    if _PRESS_MENU_RE.search(ocr_text):
         is_prerecorded = True
         signals.append("press-key menu (automated/IVR system)")
-    if re.search(r"opt[\s-]*out|do not call|stop calling|press\s+\d\s+to\s+opt", lower):
+    if _OPT_OUT_RE.search(ocr_text):
         signals.append("offered opt-out / DNC language (telemarketing indicator)")
 
     found = sorted({w for w in _SOLICITATION_WORDS if w in lower})
     if found:
         signals.append("solicitation keywords: " + ", ".join(found))
+
+    callbacks = _callback_numbers(ocr_text, result.from_number)
+    if callbacks:
+        signals.append("callback number(s) in message: " + ", ".join(callbacks))
+
+    # iOS flags shaky transcriptions; note it so the text isn't taken verbatim.
+    if re.search(r"Transcript\s*\(\s*low\s*confidence", ocr_text, re.IGNORECASE):
+        signals.append("iOS marked transcript low-confidence (may be inaccurate)")
+
     if result.duration_seconds:
         signals.append(f"voicemail length ~{result.duration_seconds}s")
 

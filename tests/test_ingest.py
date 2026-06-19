@@ -66,6 +66,89 @@ def test_screenshot_empty_text_is_safe():
     assert parsed.detected_signals == []
 
 
+# --- Calibration against real iPhone voicemail screenshots ------------------
+
+SHOT1 = (  # tax-file call, low-confidence transcript, formatted number
+    "5:29\n+1 (434) 246-0804\nUnknown - Jun 17, 2026 at 10:05 PM\n"
+    "00:00 -00:09\nAdd Contact Report Spam\nTranscript (low confidence)\n"
+    "Um, this is Rebecca Turner calling regarding your tax file.\n"
+    "Favorites Recents Contacts Keypad Voicemail"
+)
+SHOT2 = (  # loan offer with spelled-out "press two" and "removed from our list"
+    "5:29\n+1 (855) 964-5516\nUnknown - Jun 18, 2026 at 1:10 AM\n"
+    "00:00 -00:20\nAdd Contact Report Spam\nTranscript\n"
+    "$5000 with monthly payments starting at just $475. We're ready to walk you "
+    "through the offer and get the paperwork started today. To speak with a loan "
+    "specialist right now, please press two. Or if you'd like to be removed from "
+    "our list, please press 9. to repeat, press 2 to be connected with a loan "
+    "specialist or\nFavorites Recents Contacts Keypad Voicemail"
+)
+SHOT3 = (  # bare 10-digit number
+    "5:29\n8885843759\nUnknown - Jun 18, 2026 at 6:36 AM\n00:00 -00:14\n"
+    "Add Contact Report Spam\nTranscript\n"
+    "started today. To speak with a loan specialist right now, please press two. "
+    "Or if you'd like to be removed from our list. Please press 9 to repeat, "
+    "press 2 to be connected with a loan specialist, or 9 to be removed from our "
+    "list.\nFavorites Recents Contacts Keypad Voicemail"
+)
+SHOT4 = (  # tax resolution, no press menu, callback number in transcript
+    "5:28\n+1 (470) 739-4921\nUnknown - Jun 18, 2026 at 9:39 PM\n00:00 -00:35\n"
+    "Add Contact Report Spam\nTranscript\n"
+    "Hi, this is Kimberly Kennedy with the tax resolution department. Your file "
+    "came across my desk for review today, and based on the information I have, I "
+    "can help reduce a portion of your current tax obligation, call me at "
+    "866-386-4908. I'm not sure if your circumstances have changed recently, but "
+    "there may be programs available that could help address certain penalties, "
+    "accrued interest, or part of the balance owed. The reason for my call is "
+    "that unresolved tax balances can continue to grow over time. Again, call me "
+    "at 866-386-4908.\nFavorites Recents Contacts Keypad Voicemail"
+)
+
+
+def test_shot1_number_timestamp_and_low_confidence():
+    p = parse_voicemail_screenshot(SHOT1)
+    assert p.from_number == "+14342460804"
+    assert (p.received_at.month, p.received_at.day, p.received_at.hour) == (6, 17, 22)
+    assert p.duration_seconds == 9
+    assert p.transcript == "Um, this is Rebecca Turner calling regarding your tax file."
+    assert "(low confidence)" not in p.transcript
+    joined = " ".join(p.detected_signals).lower()
+    assert "low-confidence" in joined
+    assert "tax" in joined
+    # No phone-tree, so prerecorded stays unknown (honest).
+    assert p.is_prerecorded is None
+
+
+def test_shot2_spelled_out_press_and_removed_from_list():
+    p = parse_voicemail_screenshot(SHOT2)
+    assert p.from_number == "+18559645516"
+    assert (p.received_at.hour, p.received_at.minute) == (1, 10)
+    assert p.duration_seconds == 20
+    assert p.is_prerecorded is True  # "please press two"
+    joined = " ".join(p.detected_signals).lower()
+    assert "opt-out" in joined  # "removed from our list"
+    assert "loan" in joined
+
+
+def test_shot3_bare_number_and_press_menu():
+    p = parse_voicemail_screenshot(SHOT3)
+    assert p.from_number == "+18885843759"
+    assert p.is_prerecorded is True
+    assert "opt-out" in " ".join(p.detected_signals).lower()
+
+
+def test_shot4_callback_number_and_no_press_menu():
+    p = parse_voicemail_screenshot(SHOT4)
+    assert p.from_number == "+14707394921"
+    assert (p.received_at.hour, p.received_at.minute) == (21, 39)
+    assert p.duration_seconds == 35
+    # Personal-sounding message with no phone tree -> prerecorded unknown.
+    assert p.is_prerecorded is None
+    joined = " ".join(p.detected_signals).lower()
+    assert "+18663864908" in joined  # callback number captured
+    assert "tax" in joined
+
+
 def test_parse_voicemail_notification():
     body = (
         "You have a new voicemail.\n"
