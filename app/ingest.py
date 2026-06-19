@@ -166,3 +166,134 @@ def parse_email(
     result.message_body = _extract_transcript(body) or body.strip() or None
 
     return result
+
+
+# --------------------------------------------------------------------------- #
+# iPhone voicemail-screen screenshot parsing (from on-device OCR text)
+# --------------------------------------------------------------------------- #
+
+# Words from the iOS Phone-app tab bar; used to cut them off the transcript.
+_NAV_WORDS = ("Favorites", "Recents", "Contacts", "Keypad", "Voicemail")
+
+# "Jun 19, 2026 at 3:38 AM"  /  "June 19, 2026 3:38 PM"
+_SCREENSHOT_DATE_RE = re.compile(
+    r"([A-Z][a-z]{2,8}\.?\s+\d{1,2},\s*\d{4})\s*(?:at\s*)?"
+    r"(\d{1,2}:\d{2}\s*[AaPp][Mm])"
+)
+
+# Telemarketing / solicitation keywords worth flagging in the transcript.
+_SOLICITATION_WORDS = (
+    "warranty",
+    "loan",
+    "approval",
+    "approved",
+    "offer",
+    "credit",
+    "insurance",
+    "debt",
+    "refinance",
+    "interest rate",
+    "final notice",
+    "lower your",
+    "limited time",
+)
+
+
+@dataclass
+class ParsedScreenshot:
+    from_number: str | None = None
+    received_at: datetime | None = None
+    caller_id_name: str | None = None
+    transcript: str | None = None
+    is_prerecorded: bool | None = None
+    duration_seconds: int | None = None
+    detected_signals: list[str] = field(default_factory=list)
+
+
+def _screenshot_datetime(text: str) -> datetime | None:
+    m = _SCREENSHOT_DATE_RE.search(text)
+    if not m:
+        return None
+    combined = re.sub(r"\s+", " ", f"{m.group(1)} {m.group(2)}".replace(".", "")).strip()
+    for fmt in ("%b %d, %Y %I:%M %p", "%B %d, %Y %I:%M %p"):
+        try:
+            return datetime.strptime(combined, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _screenshot_caller_name(text: str) -> str | None:
+    # The subtitle line reads like "Unknown - Jun 19, 2026 at 3:38 AM" or
+    # "John's Auto - Jun 19, 2026 ...". Take the part before the dash.
+    m = re.search(
+        r"^(.*?)[\-–—]\s*[A-Z][a-z]{2,8}\.?\s+\d{1,2},\s*\d{4}",
+        text,
+        re.MULTILINE,
+    )
+    if not m:
+        return None
+    name = m.group(1).strip()
+    if not name or name.lower() in {"unknown", "no caller id", "maybe"}:
+        return None
+    return name
+
+
+def _screenshot_transcript(text: str) -> str | None:
+    m = re.search(r"\bTranscript\b\s*[:\n]?\s*(.+)", text, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return None
+    lines: list[str] = []
+    for line in m.group(1).splitlines():
+        nav_hits = sum(1 for w in _NAV_WORDS if w.lower() in line.lower())
+        if nav_hits >= 2:
+            break  # Reached the tab bar.
+        lines.append(line.strip())
+    transcript = " ".join(line for line in lines if line).strip()
+    return transcript or None
+
+
+def parse_voicemail_screenshot(ocr_text: str) -> ParsedScreenshot:
+    """Extract incident fields from the OCR text of an iPhone voicemail screen.
+
+    Pulls the caller number, timestamp, caller-ID name, transcript, and voicemail
+    length, and flags automated/telemarketing signals. ``is_prerecorded`` is set
+    True only when there is a clear automated-message signal (explicit keywords
+    or a "press N" menu); everything is recorded in ``detected_signals`` so the
+    user can review and override on the detail page.
+    """
+    result = ParsedScreenshot()
+    if not ocr_text:
+        return result
+
+    result.from_number = extract_phone_number(ocr_text)
+    result.received_at = _screenshot_datetime(ocr_text)
+    result.caller_id_name = _screenshot_caller_name(ocr_text)
+    result.transcript = _screenshot_transcript(ocr_text)
+
+    dur = re.search(r"[-−](\d{1,2}):(\d{2})", ocr_text)
+    if dur:
+        result.duration_seconds = int(dur.group(1)) * 60 + int(dur.group(2))
+
+    lower = ocr_text.lower()
+    signals: list[str] = []
+    is_prerecorded: bool | None = None
+
+    if PRERECORDED_HINTS.search(ocr_text):
+        is_prerecorded = True
+        signals.append("prerecorded/automated keywords")
+    if re.search(r"press\s+\d", lower):
+        is_prerecorded = True
+        signals.append("press-key menu (automated/IVR system)")
+    if re.search(r"opt[\s-]*out|do not call|stop calling|press\s+\d\s+to\s+opt", lower):
+        signals.append("offered opt-out / DNC language (telemarketing indicator)")
+
+    found = sorted({w for w in _SOLICITATION_WORDS if w in lower})
+    if found:
+        signals.append("solicitation keywords: " + ", ".join(found))
+    if result.duration_seconds:
+        signals.append(f"voicemail length ~{result.duration_seconds}s")
+
+    result.is_prerecorded = is_prerecorded
+    result.detected_signals = signals
+    return result

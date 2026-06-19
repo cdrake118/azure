@@ -48,6 +48,35 @@ def test_screenshot_reads_number_from_ocr_text(client):
     assert "Press 9 to opt out" in data["raw_message"]
 
 
+def test_screenshot_autofills_transcript_timestamp_and_flags(client):
+    resp = client.post(
+        "/api/voicemails/screenshot",
+        data={"ocr_text": OCR_TEXT},
+        files={"file": ("vm.png", IMAGE, "image/png")},
+    )
+    data = resp.json()
+    # Transcript pulled into message_body.
+    assert data["message_body"].startswith("Okay, to go over the details")
+    # Timestamp parsed from the screenshot.
+    assert data["received_at"].startswith("2026-06-19T03:38")
+    # Automated-message signal sets the prerecorded flag.
+    assert data["is_prerecorded"] is True
+    # Detected signals recorded in notes for transparency.
+    assert "Auto-detected from screenshot" in data["notes"]
+
+
+def test_screenshot_autofilled_prerecorded_voicemail_flags_227b(client):
+    inc = client.post(
+        "/api/voicemails/screenshot",
+        data={"ocr_text": OCR_TEXT},
+        files={"file": ("vm.png", IMAGE, "image/png")},
+    ).json()
+    analysis = client.get(f"/api/incidents/{inc['id']}/analysis").json()
+    statutes = [f["statute"] for f in analysis["findings"]]
+    # Prerecorded voicemail to a cell with no consent -> 227(b), no manual edits.
+    assert any("227(b)" in s for s in statutes)
+
+
 def test_screenshot_explicit_number_overrides_ocr(client):
     resp = client.post(
         "/api/voicemails/screenshot",

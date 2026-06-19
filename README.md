@@ -82,7 +82,10 @@ in the dashboard. Two ways to add them:
   [`docs/ios-shortcut.md`](docs/ios-shortcut.md).
 - **Screenshot + voicemail, linked** — a two-step Shortcut flow logs a
   screenshot of the voicemail screen *and* the audio into one incident. iOS reads
-  the caller's number off the screenshot on-device (OCR), so you type nothing.
+  the screen on-device (OCR) and the server auto-fills the **number, timestamp,
+  caller name, transcript, and voicemail length**, flags automated/telemarketing
+  signals (press-key menus, opt-out/DNC language, solicitation keywords) into the
+  notes, and sets the prerecorded flag when warranted — so you type nothing.
 
 Every incident has a **detail page** (click *view* in the log) showing all
 attachments — image previews and audio players — with an *Add evidence* upload,

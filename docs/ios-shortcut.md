@@ -90,9 +90,14 @@ built-in text recognition, so you don't type anything.
      | `file` | File | **Shortcut Input** (the screenshot) |
      | `ocr_text` | Text | **Extracted Text** (from step 2) |
 
-The server parses the phone number out of `ocr_text` and keeps the full OCR text
-on the incident for reference. (If recognition ever misses, you can still add a
-`from_number` text field, or fix the number on the incident's detail page.)
+From `ocr_text` the server auto-fills the **number**, the **timestamp**, the
+**caller name** (when shown), the **transcript** (tab-bar/button chrome stripped
+out), and the **voicemail length**. It also flags automated/telemarketing
+signals — a "press N" menu, opt-out/DNC language, and solicitation keywords —
+recording them in the incident's notes, and sets the *prerecorded* flag when
+there's a clear automated-message signal. The full OCR text is kept as reference.
+(If recognition ever misses, add a `from_number` field or fix it on the detail
+page.)
 
 ## Shortcut B — "Log VM Audio"
 

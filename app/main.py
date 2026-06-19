@@ -230,7 +230,8 @@ async def api_upload_screenshot(
     """
     data = await _read_upload(file)
 
-    number = (from_number or "").strip() or ingest.extract_phone_number(ocr_text or "")
+    parsed = ingest.parse_voicemail_screenshot(ocr_text or "")
+    number = (from_number or "").strip() or parsed.from_number
     if not number:
         raise HTTPException(
             status_code=422,
@@ -240,15 +241,26 @@ async def api_upload_screenshot(
             ),
         )
 
+    # Explicit form fields win; otherwise fall back to what OCR found.
+    notes = (
+        "Auto-detected from screenshot: " + "; ".join(parsed.detected_signals)
+        if parsed.detected_signals
+        else None
+    )
     incident = crud.create_incident(
         db,
         schemas.IncidentCreate(
-            received_at=_parse_form_dt(received_at) or datetime.now(timezone.utc),
+            received_at=_parse_form_dt(received_at)
+            or parsed.received_at
+            or datetime.now(timezone.utc),
             contact_type=ContactType.voicemail,
             to_number_is_cell=True,
             from_number=number,
-            message_body=message_body or None,
+            caller_id_name=parsed.caller_id_name,
+            message_body=(message_body or None) or parsed.transcript,
+            is_prerecorded=parsed.is_prerecorded,
             raw_message=ocr_text or None,
+            notes=notes,
             source=Source.api,
         ),
     )
