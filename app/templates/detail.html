@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ incident.from_number }} · {{ incident.received_at.strftime("%Y-%m-%d %H:%M") }}{% endblock %}
+{% block content %}
+
+<p><a href="/">← Back to log</a></p>
+
+<h2>{{ incident.from_number }}
+  {% if incident.caller_id_name %}<small>({{ incident.caller_id_name }})</small>{% endif %}
+</h2>
+<p class="muted">
+  {{ incident.contact_type.value.replace("_", " ") }} ·
+  {{ incident.received_at.strftime("%Y-%m-%d %H:%M %Z") }} ·
+  source: {{ incident.source.value }}
+</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Potential statutes</div>
+    {% for f in findings %}
+      <div><span class="badge" title="{{ f.description }}">{{ f.statute }}</span></div>
+    {% else %}
+      <div class="muted">None flagged from the current facts</div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <div class="num">{% if base %}${{ "{:,}".format(base) }}{% else %}—{% endif %}</div>
+    <div class="label">Est. base{% if treble %} · up to ${{ "{:,}".format(treble) }} if willful{% endif %}</div>
+  </div>
+</div>
+
+<h2>Evidence ({{ incident.attachments|length }})</h2>
+<div class="attachments">
+  {% for a in incident.attachments %}
+  <div class="att">
+    {% if a.content_type.startswith("image") %}
+      <a href="/api/attachments/{{ a.id }}" target="_blank">
+        <img src="/api/attachments/{{ a.id }}" alt="{{ a.filename }}" />
+      </a>
+    {% elif a.content_type.startswith("audio") %}
+      <audio controls preload="none" src="/api/attachments/{{ a.id }}"></audio>
+    {% else %}
+      <a href="/api/attachments/{{ a.id }}?download=true">{{ a.filename or "file" }}</a>
+    {% endif %}
+    <div class="att-meta">
+      <small>{{ a.filename or "file" }} · {{ (a.size_bytes / 1024)|round(1) }} KB</small>
+      <form method="post" action="/attachment/{{ a.id }}/delete" onsubmit="return confirm('Delete this attachment?');">
+        <button class="link-danger" type="submit">delete</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No evidence attached yet.</p>
+  {% endfor %}
+</div>
+
+<h3>Add evidence</h3>
+<form method="post" action="/incident/{{ incident.id }}/attach" enctype="multipart/form-data" class="entry">
+  <div class="field">
+    <input type="file" name="file" accept="audio/*,image/*" required />
+    <small>Attach a screenshot, voicemail audio, or other file (max 25&nbsp;MB).</small>
+  </div>
+  <div class="actions"><button type="submit">Upload</button></div>
+</form>
+
+<h2>Details</h2>
+<form method="post" action="/incident/{{ incident.id }}/edit" class="entry">
+  <div class="field">
+    <label>Sender number</label>
+    <input name="from_number" value="{{ incident.from_number }}" required />
+  </div>
+  <div class="field">
+    <label>Type</label>
+    <select name="contact_type">
+      {% for t in contact_types %}
+      <option value="{{ t }}" {{ "selected" if t == incident.contact_type.value else "" }}>{{ t.replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>Received at</label>
+    <input type="datetime-local" name="received_at"
+           value="{{ incident.received_at.strftime('%Y-%m-%dT%H:%M') }}" />
+  </div>
+  <div class="field">
+    <label>Caller ID name / company</label>
+    <input name="caller_id_name" value="{{ incident.caller_id_name or '' }}" />
+  </div>
+  <div class="field full">
+    <label>Message body / voicemail transcript</label>
+    <textarea name="message_body" rows="5">{{ incident.message_body or "" }}</textarea>
+  </div>
+
+  <fieldset>
+    <legend>TCPA facts</legend>
+    <label class="chk"><input type="checkbox" name="is_prerecorded" {{ "checked" if incident.is_prerecorded else "" }} /> Prerecorded / artificial voice</label>
+    <label class="chk"><input type="checkbox" name="is_autodialed" {{ "checked" if incident.is_autodialed else "" }} /> Appears autodialed (ATDS)</label>
+    <label class="chk"><input type="checkbox" name="to_number_is_cell" {{ "checked" if incident.to_number_is_cell else "" }} /> My number is a cell phone</label>
+    <label class="chk"><input type="checkbox" name="on_dnc_registry" {{ "checked" if incident.on_dnc_registry else "" }} /> My number is on the National Do Not Call registry</label>
+    <label class="chk"><input type="checkbox" name="opted_out" {{ "checked" if incident.opted_out else "" }} /> I previously told them to stop</label>
+    <label class="chk"><input type="checkbox" name="prior_consent" {{ "checked" if incident.prior_consent else "" }} /> I gave prior consent to contact me</label>
+  </fieldset>
+
+  <div class="field full">
+    <label>Notes</label>
+    <textarea name="notes" rows="2">{{ incident.notes or "" }}</textarea>
+  </div>
+
+  <div class="actions">
+    <button type="submit">Save changes</button>
+    <a href="/" class="cancel">Back</a>
+  </div>
+</form>
+
+{% endblock %}

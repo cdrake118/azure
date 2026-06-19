@@ -87,6 +87,17 @@ def _first_number(text: str) -> str | None:
     return _normalize_number(m) if m else None
 
 
+def extract_phone_number(text: str) -> str | None:
+    """Pull the most likely phone number out of free text (e.g. OCR output).
+
+    Prefers a number following a 'From'-style label, then the first
+    phone-shaped string. Returns it normalized to +1XXXXXXXXXX, or None.
+    """
+    if not text:
+        return None
+    return _find_labeled_number(text) or _first_number(text)
+
+
 def _parse_datetime(text: str) -> datetime | None:
     m = _DATE_LINE_RE.search(text)
     candidates = []

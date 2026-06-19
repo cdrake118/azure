@@ -191,11 +191,123 @@ async def api_upload_voicemail(
         schemas.IncidentCreate(
             received_at=_parse_form_dt(received_at) or datetime.now(timezone.utc),
             contact_type=ContactType.voicemail,
+            to_number_is_cell=True,
             from_number=from_number.strip(),
             message_body=message_body or None,
             source=Source.api,
         ),
     )
+    crud.create_attachment(
+        db, incident.id, data, filename=file.filename, content_type=file.content_type
+    )
+    db.refresh(incident)
+    return incident
+
+
+@app.post(
+    "/api/voicemails/screenshot",
+    response_model=schemas.IncidentOut,
+    dependencies=[Depends(require_upload_auth)],
+)
+async def api_upload_screenshot(
+    file: UploadFile = File(...),
+    from_number: str | None = Form(None),
+    ocr_text: str | None = Form(None),
+    received_at: str | None = Form(None),
+    message_body: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Step 1 of the two-step flow: create a voicemail incident from a screenshot.
+
+    The caller's number can be supplied explicitly via ``from_number`` or read
+    from ``ocr_text`` — the text iOS extracts from the screenshot on-device
+    ("Extract Text from Image"), so nothing needs to be typed. The raw OCR text
+    is kept on the incident as ``raw_message`` for reference.
+
+    The incident is created with the screenshot attached and no audio yet, so a
+    subsequent POST to /api/voicemails/audio (with no incident id) auto-links the
+    voicemail recording to it.
+    """
+    data = await _read_upload(file)
+
+    number = (from_number or "").strip() or ingest.extract_phone_number(ocr_text or "")
+    if not number:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Could not determine the caller's number. Include a from_number "
+                "field, or ocr_text containing the number."
+            ),
+        )
+
+    incident = crud.create_incident(
+        db,
+        schemas.IncidentCreate(
+            received_at=_parse_form_dt(received_at) or datetime.now(timezone.utc),
+            contact_type=ContactType.voicemail,
+            to_number_is_cell=True,
+            from_number=number,
+            message_body=message_body or None,
+            raw_message=ocr_text or None,
+            source=Source.api,
+        ),
+    )
+    crud.create_attachment(
+        db, incident.id, data, filename=file.filename, content_type=file.content_type
+    )
+    db.refresh(incident)
+    return incident
+
+
+@app.post(
+    "/api/voicemails/audio",
+    response_model=schemas.IncidentOut,
+    dependencies=[Depends(require_upload_auth)],
+)
+async def api_upload_voicemail_audio(
+    file: UploadFile = File(...),
+    incident_id: int | None = Form(None),
+    from_number: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Step 2 of the two-step flow: attach voicemail audio to an incident.
+
+    Resolution order for which incident the audio belongs to:
+      1. An explicit ``incident_id`` form field, if provided.
+      2. Otherwise, the most recent voicemail incident that has a screenshot but
+         no audio yet (auto-link).
+      3. Otherwise, if ``from_number`` is provided, a brand-new incident.
+    Step 3 means audio is never silently dropped even if no screenshot was sent.
+    """
+    data = await _read_upload(file)
+
+    incident = None
+    if incident_id is not None:
+        incident = crud.get_incident(db, incident_id)
+        if incident is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+    else:
+        incident = crud.latest_incident_awaiting_audio(db)
+
+    if incident is None:
+        if not from_number:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "No incident is awaiting audio. Upload a screenshot first, "
+                    "or include a from_number to create a new incident."
+                ),
+            )
+        incident = crud.create_incident(
+            db,
+            schemas.IncidentCreate(
+                contact_type=ContactType.voicemail,
+                to_number_is_cell=True,
+                from_number=from_number.strip(),
+                source=Source.api,
+            ),
+        )
+
     crud.create_attachment(
         db, incident.id, data, filename=file.filename, content_type=file.content_type
     )
@@ -363,6 +475,91 @@ def web_ingest(
     )
     crud.create_incident(db, payload)
     return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/incident/{incident_id}", response_class=HTMLResponse)
+def web_incident_detail(
+    incident_id: int, request: Request, db: Session = Depends(get_db)
+):
+    incident = crud.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    findings = analyze_all(crud.all_incidents(db)).get(incident_id, [])
+    base, treble = damages_for_findings(findings)
+    return templates.TemplateResponse(
+        request,
+        "detail.html",
+        {
+            "incident": incident,
+            "findings": findings,
+            "base": base,
+            "treble": treble,
+            "contact_types": [t.value for t in ContactType],
+            "disclaimer": DISCLAIMER,
+        },
+    )
+
+
+@app.post("/incident/{incident_id}/edit")
+def web_incident_edit(
+    incident_id: int,
+    from_number: str = Form(...),
+    contact_type: str = Form("voicemail"),
+    received_at: str = Form(""),
+    message_body: str = Form(""),
+    caller_id_name: str = Form(""),
+    is_prerecorded: str = Form(""),
+    is_autodialed: str = Form(""),
+    to_number_is_cell: str = Form(""),
+    on_dnc_registry: str = Form(""),
+    prior_consent: str = Form(""),
+    opted_out: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    changes = {
+        "from_number": from_number.strip(),
+        "contact_type": ContactType(contact_type),
+        "received_at": _parse_form_dt(received_at),
+        "message_body": message_body or None,
+        "caller_id_name": caller_id_name or None,
+        "is_prerecorded": _checkbox(is_prerecorded),
+        "is_autodialed": _checkbox(is_autodialed),
+        "to_number_is_cell": _checkbox(to_number_is_cell),
+        "on_dnc_registry": _checkbox(on_dnc_registry),
+        "prior_consent": _checkbox(prior_consent),
+        "opted_out": _checkbox(opted_out),
+        "notes": notes or None,
+    }
+    if changes["received_at"] is None:
+        # Don't wipe an existing timestamp when the field is left blank.
+        changes.pop("received_at")
+    if crud.update_incident(db, incident_id, changes) is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return RedirectResponse(url=f"/incident/{incident_id}", status_code=303)
+
+
+@app.post("/incident/{incident_id}/attach")
+async def web_incident_attach(
+    incident_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    if crud.get_incident(db, incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    if file.filename:
+        data = await _read_upload(file)
+        crud.create_attachment(
+            db, incident_id, data, filename=file.filename, content_type=file.content_type
+        )
+    return RedirectResponse(url=f"/incident/{incident_id}", status_code=303)
+
+
+@app.post("/attachment/{attachment_id}/delete")
+def web_attachment_delete(attachment_id: int, db: Session = Depends(get_db)):
+    incident_id = crud.delete_attachment(db, attachment_id)
+    target = f"/incident/{incident_id}" if incident_id else "/"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @app.post("/delete/{incident_id}")

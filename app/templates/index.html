@@ -51,6 +51,8 @@
         {% for a in row.incident.attachments %}
           {% if a.content_type.startswith("audio") %}
             <audio controls preload="none" src="/api/attachments/{{ a.id }}"></audio>
+          {% elif a.content_type.startswith("image") %}
+            <a href="/incident/{{ row.incident.id }}"><img class="thumb" src="/api/attachments/{{ a.id }}" alt="screenshot" /></a>
           {% else %}
             <a href="/api/attachments/{{ a.id }}?download=true">{{ a.filename or "file" }}</a>
           {% endif %}
@@ -66,7 +68,8 @@
         {% endfor %}
       </td>
       <td class="nowrap">{% if row.base %}${{ "{:,}".format(row.base) }}–${{ "{:,}".format(row.treble) }}{% else %}—{% endif %}</td>
-      <td>
+      <td class="nowrap">
+        <a href="/incident/{{ row.incident.id }}">view</a>
         <form method="post" action="/delete/{{ row.incident.id }}" onsubmit="return confirm('Delete this entry?');">
           <button class="link-danger" type="submit">delete</button>
         </form>

@@ -29,9 +29,13 @@ _security = HTTPBasic(auto_error=False)
 _PUBLIC_PATHS = {"/healthz"}
 
 # Paths that run their own auth at the route level and so are skipped by the
-# app-wide Basic-auth dependency (e.g. the upload endpoint, which also accepts
-# an upload token to make the iOS Shortcut easy).
-_SELF_AUTH_PATHS = {"/api/voicemails"}
+# app-wide Basic-auth dependency (e.g. the upload endpoints, which also accept
+# an upload token to make the iOS Shortcuts easy).
+_SELF_AUTH_PATHS = {
+    "/api/voicemails",
+    "/api/voicemails/screenshot",
+    "/api/voicemails/audio",
+}
 
 
 def auth_enabled() -> bool:

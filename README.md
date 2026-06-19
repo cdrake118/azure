@@ -80,6 +80,13 @@ in the dashboard. Two ways to add them:
 - **One-tap from iPhone** — set up the Apple Shortcut so you can upload a
   voicemail straight from the **Share** menu. See
   [`docs/ios-shortcut.md`](docs/ios-shortcut.md).
+- **Screenshot + voicemail, linked** — a two-step Shortcut flow logs a
+  screenshot of the voicemail screen *and* the audio into one incident. iOS reads
+  the caller's number off the screenshot on-device (OCR), so you type nothing.
+
+Every incident has a **detail page** (click *view* in the log) showing all
+attachments — image previews and audio players — with an *Add evidence* upload,
+per-attachment delete, and an editable form for the TCPA facts.
 
 Uploads are capped at 25 MB. `.m4a` clips play inline; unusual carrier formats
 are still stored and downloadable as evidence.
@@ -103,6 +110,8 @@ are still stored and downloadable as evidence.
 | GET | `/api/callers` | List distinct callers |
 | POST | `/api/ingest/email` | Parse a forwarded SMS/voicemail email |
 | POST | `/api/voicemails` | Upload a voicemail audio file (+ number) as a new incident |
+| POST | `/api/voicemails/screenshot` | Create an incident from a screenshot; reads the number from `ocr_text` |
+| POST | `/api/voicemails/audio` | Attach voicemail audio, auto-linking to the latest screenshot incident |
 | POST | `/api/incidents/{id}/attachments` | Attach evidence to an existing incident |
 | GET | `/api/attachments/{id}` | Stream/download an attachment |
 | GET | `/api/report` | Aggregated claim report |

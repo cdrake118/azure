@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -121,3 +121,80 @@ def create_attachment(
 
 def get_attachment(db: Session, attachment_id: int) -> models.Attachment | None:
     return db.get(models.Attachment, attachment_id)
+
+
+def delete_attachment(db: Session, attachment_id: int) -> int | None:
+    """Delete an attachment; return its incident id (for redirects) or None."""
+    attachment = db.get(models.Attachment, attachment_id)
+    if attachment is None:
+        return None
+    incident_id = attachment.incident_id
+    db.delete(attachment)
+    db.commit()
+    return incident_id
+
+
+# Fields the detail-page edit form is allowed to change.
+_EDITABLE_FIELDS = {
+    "from_number",
+    "caller_id_name",
+    "message_body",
+    "received_at",
+    "contact_type",
+    "is_prerecorded",
+    "is_autodialed",
+    "to_number_is_cell",
+    "on_dnc_registry",
+    "prior_consent",
+    "opted_out",
+    "notes",
+}
+
+
+def update_incident(
+    db: Session, incident_id: int, changes: dict
+) -> models.Incident | None:
+    incident = db.get(models.Incident, incident_id)
+    if incident is None:
+        return None
+    for field, value in changes.items():
+        if field in _EDITABLE_FIELDS:
+            setattr(incident, field, value)
+    # Keep the caller's phone number in sync if it was edited.
+    if "from_number" in changes and changes["from_number"]:
+        caller = get_or_create_caller(db, changes["from_number"])
+        incident.caller_id = caller.id
+    db.commit()
+    db.refresh(incident)
+    return incident
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def latest_incident_awaiting_audio(
+    db: Session, within_hours: int = 12
+) -> models.Incident | None:
+    """The most recent voicemail incident that has evidence but no audio yet.
+
+    Used to auto-link a voicemail audio upload to the screenshot that was
+    uploaded just before it, so the two iOS Shortcuts don't need to pass an
+    incident id between them.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+    stmt = (
+        select(models.Incident)
+        .where(models.Incident.contact_type == models.ContactType.voicemail)
+        .order_by(models.Incident.created_at.desc())
+        .limit(100)
+    )
+    for incident in db.scalars(stmt):
+        if _aware(incident.created_at) < cutoff:
+            break  # Older than the window; nothing newer remains.
+        attachments = incident.attachments
+        if attachments and not any(
+            a.content_type.startswith("audio") for a in attachments
+        ):
+            return incident
+    return None
