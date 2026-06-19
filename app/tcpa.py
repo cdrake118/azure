@@ -16,6 +16,10 @@ are fixed by the TCPA itself:
 * 47 CFR 64.1200(d) -- telemarketer failed to honor your prior do-not-call /
   opt-out request. $500 per violation; up to $1,500 if willful or knowing.
 
+* 47 CFR 64.1200(c)(1) -- telephone solicitation made outside the permitted
+  hours of 8 a.m. to 9 p.m. in the called party's local time. $500 per
+  violation; up to $1,500 if willful or knowing.
+
 The numbers above are the basis for the constants below.
 """
 
@@ -123,7 +127,35 @@ def analyze_incident(
             )
         )
 
+    # --- 47 CFR 64.1200(c)(1): calls outside permitted hours ---
+    if (
+        not incident.prior_consent
+        and _is_telemarketing(incident)
+        and _outside_calling_hours(incident.received_at)
+    ):
+        findings.append(
+            Finding(
+                "47 CFR 64.1200(c)(1)",
+                "Telephone solicitation outside the permitted calling window of "
+                "8 a.m. to 9 p.m. in the called party's local time. (The private "
+                "right of action under 47 U.S.C. 227(c)(5) generally requires "
+                "more than one such call within a 12-month period.)",
+            )
+        )
+
     return findings
+
+
+def _outside_calling_hours(received_at) -> bool:
+    """True if the call time falls before 8 a.m. or after 9 p.m.
+
+    The timestamp is taken as the called party's local time — which is what an
+    iPhone voicemail screen shows, and what 64.1200(c)(1) measures against.
+    """
+    if received_at is None:
+        return False
+    minutes = received_at.hour * 60 + received_at.minute
+    return minutes < 8 * 60 or minutes > 21 * 60
 
 
 def _dnc_counts_for_caller(incidents: list[Incident]) -> dict[int, int]:

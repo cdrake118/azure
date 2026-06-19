@@ -10,7 +10,9 @@ def _incident(**kw):
     defaults = dict(
         id=1,
         caller_id=1,
-        received_at=datetime.now(timezone.utc),
+        # A fixed mid-afternoon time so the time-of-day rule doesn't add a
+        # finding unless a test sets received_at explicitly.
+        received_at=datetime(2026, 6, 1, 14, 0, tzinfo=timezone.utc),
         contact_type=ContactType.text_sms,
         from_number="+15551230000",
         to_number_is_cell=True,
@@ -75,6 +77,43 @@ def test_old_repeat_outside_window_does_not_count():
     ]
     results = analyze_all(incidents)
     assert not any("227(c)" in f.statute for f in results[2])
+
+
+def test_call_before_8am_flags_time_violation():
+    inc = _incident(received_at=datetime(2026, 6, 19, 3, 38, tzinfo=timezone.utc))
+    assert any("64.1200(c)(1)" in f.statute for f in analyze_incident(inc))
+
+
+def test_call_after_9pm_flags_time_violation():
+    inc = _incident(received_at=datetime(2026, 6, 17, 22, 5, tzinfo=timezone.utc))
+    assert any("64.1200(c)(1)" in f.statute for f in analyze_incident(inc))
+
+
+def test_midday_call_has_no_time_violation():
+    inc = _incident(received_at=datetime(2026, 6, 18, 14, 0, tzinfo=timezone.utc))
+    assert not any("64.1200(c)(1)" in f.statute for f in analyze_incident(inc))
+
+
+def test_9pm_boundary_is_allowed():
+    # 9:00 PM exactly is the edge of the permitted window, not a violation.
+    inc = _incident(received_at=datetime(2026, 6, 18, 21, 0, tzinfo=timezone.utc))
+    assert not any("64.1200(c)(1)" in f.statute for f in analyze_incident(inc))
+
+
+def test_time_violation_requires_telemarketing():
+    inc = _incident(
+        contact_type=ContactType.missed_call,
+        received_at=datetime(2026, 6, 19, 3, 38, tzinfo=timezone.utc),
+    )
+    assert not any("64.1200(c)(1)" in f.statute for f in analyze_incident(inc))
+
+
+def test_prior_consent_blocks_time_violation():
+    inc = _incident(
+        prior_consent=True,
+        received_at=datetime(2026, 6, 19, 3, 38, tzinfo=timezone.utc),
+    )
+    assert not any("64.1200(c)(1)" in f.statute for f in analyze_incident(inc))
 
 
 def test_damages_sum():

@@ -33,6 +33,7 @@ theories and gives a rough statutory-damages range.
 | 47 U.S.C. § 227(b) | Autodialed/prerecorded contact to a cell without prior consent | $500, up to $1,500 if willful |
 | 47 U.S.C. § 227(c) / 47 CFR 64.1200(c) | >1 telemarketing contact in 12 months to a DNC-registered number | $500, up to $1,500 if willful |
 | 47 CFR 64.1200(d) | Continued contact after you asked them to stop | $500, up to $1,500 if willful |
+| 47 CFR 64.1200(c)(1) | Telephone solicitation before 8 a.m. or after 9 p.m. (called party's local time) | $500, up to $1,500 if willful |
 
 The damages figures are the statutory amounts set by the TCPA itself.
 
